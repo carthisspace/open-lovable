@@ -183,7 +183,7 @@ except Exception as e:
         
         // Install only packages that aren't already installed
         const packageList = packagesToInstall.join(' ');
-        // Only send the npm install command message if we're actually installing new packages
+        // Only send the pnpm install command message if we're actually installing new packages
         await sendProgress({ 
           type: 'info', 
           message: `Installing ${packagesToInstall.length} new package(s): ${packagesToInstall.join(', ')}`
@@ -192,41 +192,98 @@ except Exception as e:
         const installResult = await sandboxInstance.runCode(`
 import subprocess
 import os
+import json
+import time
 
 os.chdir('/home/user/app')
 
-# Run npm install with output capture
 packages_to_install = ${JSON.stringify(packagesToInstall)}
-cmd_args = ['npm', 'install', '--legacy-peer-deps'] + packages_to_install
+# Initial command: pnpm install <packages>
+# Note: pnpm install <packages> will update package.json and pnpm-lock.yaml by default.
+# The ERR_PNPM_OUTDATED_LOCKFILE usually occurs with a bare 'pnpm install' or 'pnpm install --frozen-lockfile'.
+# However, to be robust, we'll implement a retry.
+initial_cmd_args = ['pnpm', 'install'] + packages_to_install
 
-print(f"Running command: {' '.join(cmd_args)}")
+# Store all output for later parsing
+all_stdout_lines = []
+all_stderr_lines = []
+final_rc = 1 # Assume failure initially
 
-process = subprocess.Popen(
-    cmd_args,
-    stdout=subprocess.PIPE,
-    stderr=subprocess.PIPE,
-    text=True
-)
+def run_pnpm_command(cmd_args, timeout=120):
+    """Helper function to run pnpm commands and capture output."""
+    print(f"Running command: {' '.join(cmd_args)}")
+    process = subprocess.Popen(
+        cmd_args,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+    
+    current_stdout_lines = []
+    current_stderr_lines = []
 
-# Stream output
-while True:
-    output = process.stdout.readline()
-    if output == '' and process.poll() is not None:
-        break
-    if output:
-        print(output.strip())
+    # Stream stdout
+    while True:
+        output = process.stdout.readline()
+        if output == '' and process.poll() is not None:
+            break
+        if output:
+            current_stdout_lines.append(output.strip())
+            print(output.strip()) # Print to sandbox stdout for real-time logging
 
-# Get the return code
-rc = process.poll()
+    # Capture remaining stderr
+    stderr_output = process.stderr.read()
+    if stderr_output:
+        current_stderr_lines.append(stderr_output.strip())
+        print("STDERR:", stderr_output.strip()) # Print to sandbox stdout for real-time logging
 
-# Capture any stderr
-stderr = process.stderr.read()
-if stderr:
-    print("STDERR:", stderr)
-    if 'ERESOLVE' in stderr:
-        print("ERESOLVE_ERROR: Dependency conflict detected - using --legacy-peer-deps flag")
+    rc = process.poll()
+    full_output = "\\n".join(current_stdout_lines + current_stderr_lines)
+    return rc, full_output, current_stdout_lines, current_stderr_lines
 
-print(f"\\nInstallation completed with code: {rc}")
+# --- First attempt to install packages ---
+print(f"Attempt 1: Installing packages: {' '.join(packages_to_install)}")
+rc, full_output, stdout_lines, stderr_lines = run_pnpm_command(initial_cmd_args, timeout=120) # Increased timeout
+
+all_stdout_lines.extend(stdout_lines)
+all_stderr_lines.extend(stderr_lines)
+final_rc = rc
+
+PNPM_OUTDATED_LOCKFILE_ERROR = "ERR_PNPM_OUTDATED_LOCKFILE"
+retry_needed = False
+
+if rc != 0 and PNPM_OUTDATED_LOCKFILE_ERROR in full_output:
+    print(f"Detected '{PNPM_OUTDATED_LOCKFILE_ERROR}'. Attempting to update lockfile and retry.")
+    retry_needed = True
+
+if retry_needed:
+    # --- Run bare 'pnpm install' to update the lockfile ---
+    print("Attempting to update lockfile with 'pnpm install'...")
+    update_rc, update_full_output, update_stdout, update_stderr = run_pnpm_command(['pnpm', 'install'], timeout=180) # More time for bare install
+
+    all_stdout_lines.extend(update_stdout)
+    all_stderr_lines.extend(update_stderr)
+
+    if update_rc != 0:
+        print("Failed to update lockfile. The original package installation error might persist.")
+        # Keep the original rc and output as the primary failure reason
+    else:
+        print("Lockfile updated successfully. Attempt 2: Retrying package installation.")
+        # --- Second attempt to install packages ---
+        rc, full_output, stdout_lines, stderr_lines = run_pnpm_command(initial_cmd_args, timeout=120)
+        
+        all_stdout_lines.extend(stdout_lines)
+        all_stderr_lines.extend(stderr_lines)
+        final_rc = rc # Update final_rc with the result of the second attempt
+
+# --- Final output processing ---
+# Check for pnpm specific errors like peer dependency issues
+if 'ERR_PNPM_PEER_DEPENDENCY_ISSUES' in "\\n".join(all_stderr_lines):
+    print("PNPM_PEER_DEPENDENCY_ERROR: Peer dependency issues detected. Consider running 'pnpm install --force' if necessary.")
+elif 'ERESOLVE' in "\\n".join(all_stderr_lines): # Keep ERESOLVE for npm compatibility if it somehow appears
+    print("ERESOLVE_ERROR: Dependency conflict detected - consider using --legacy-peer-deps flag")
+
+print(f"\\nInstallation completed with code: {final_rc}")
 
 # Verify packages were installed
 import json
@@ -235,31 +292,38 @@ with open('/home/user/app/package.json', 'r') as f:
     
 installed = []
 for pkg in ${JSON.stringify(packagesToInstall)}:
-    if pkg in package_json.get('dependencies', {}):
+    # Check both dependencies and devDependencies
+    if pkg in package_json.get('dependencies', {}) or pkg in package_json.get('devDependencies', {}):
         installed.append(pkg)
         print(f"✓ Verified {pkg}")
     else:
-        print(f"✗ Package {pkg} not found in dependencies")
+        print(f"✗ Package {pkg} not found in dependencies/devDependencies")
         
 print(f"\\nVerified installed packages: {installed}")
-        `, { timeout: 60000 }); // 60 second timeout for npm install
+        `, { timeout: 300000 }); // Increased timeout to 5 minutes for potential retries
         
-        // Send npm output
+        // Send pnpm output
         const output = installResult?.output || installResult?.logs?.stdout?.join('\n') || '';
-        const npmOutputLines = output.split('\n').filter((line: string) => line.trim());
-        for (const line of npmOutputLines) {
+        const pnpmOutputLines = output.split('\n').filter((line: string) => line.trim());
+        for (const line of pnpmOutputLines) {
           if (line.includes('STDERR:')) {
             const errorMsg = line.replace('STDERR:', '').trim();
             if (errorMsg && errorMsg !== 'undefined') {
               await sendProgress({ type: 'error', message: errorMsg });
             }
-          } else if (line.includes('ERESOLVE_ERROR:')) {
+          } else if (line.includes('PNPM_PEER_DEPENDENCY_ERROR:')) {
+            const msg = line.replace('PNPM_PEER_DEPENDENCY_ERROR:', '').trim();
+            await sendProgress({ 
+              type: 'warning', 
+              message: `Peer dependency issues detected: ${msg}` 
+            });
+          } else if (line.includes('ERESOLVE_ERROR:')) { // Keep for backward compatibility or if npm errors still appear
             const msg = line.replace('ERESOLVE_ERROR:', '').trim();
             await sendProgress({ 
               type: 'warning', 
-              message: `Dependency conflict resolved with --legacy-peer-deps: ${msg}` 
+              message: `Dependency conflict detected: ${msg}` 
             });
-          } else if (line.includes('npm WARN')) {
+          } else if (line.includes('pnpm WARN') || line.includes('npm WARN')) { // Check for both pnpm and npm warnings
             await sendProgress({ type: 'warning', message: line });
           } else if (line.trim() && !line.includes('undefined')) {
             await sendProgress({ type: 'output', message: line });
