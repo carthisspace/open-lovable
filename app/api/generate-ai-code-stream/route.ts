@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createGroq } from '@ai-sdk/groq';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAI } from '@ai-sdk/openai';
+import { createGoogle } from '@ai-sdk/google'; // Added for Gemini
 import { streamText } from 'ai';
 import type { SandboxState } from '@/types/sandbox';
 import { selectFilesForEdit, getFileContents, formatFilesForAI } from '@/lib/context-selector';
@@ -22,6 +23,22 @@ const anthropic = createAnthropic({
 const openai = createOpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
+
+const google = createGoogle({
+  apiKey: process.env.GOOGLE_API_KEY,
+});
+
+// Basic model mapping for truncation recovery, assuming common names
+const modelMapping: { [key: string]: string } = {
+  'openai/gpt-oss-20b': 'gpt-oss-20b',
+  'openai/gpt-5': 'gpt-5',
+  'anthropic/claude-3-opus': 'claude-3-opus-20240229',
+  'anthropic/claude-3-sonnet': 'claude-3-sonnet-20240229',
+  'anthropic/claude-3-haiku': 'claude-3-haiku-20240307',
+  'google/gemini-pro': 'gemini-pro',
+  'google/gemini-1.5-pro': 'gemini-1.5-pro-latest',
+  // Add other models as needed
+};
 
 // Helper function to analyze user preferences from conversation history
 function analyzeUserPreferences(messages: ConversationMessage[]): {
@@ -163,7 +180,7 @@ export async function POST(request: NextRequest) {
           const manifest: FileManifest | undefined = global.sandboxState?.fileCache?.manifest;
           
           if (manifest) {
-            await sendProgress({ type: 'status', message: '🔍 Creating search plan...' });
+            await sendProgress({ type: 'status', message: 'ðŸ”  Creating search plan...' });
             
             const fileContents = global.sandboxState.fileCache.files;
             console.log('[generate-ai-code-stream] Files available for search:', Object.keys(fileContents).length);
@@ -182,7 +199,7 @@ export async function POST(request: NextRequest) {
                 
                 await sendProgress({ 
                   type: 'status', 
-                  message: `🔎 Searching for: "${searchPlan.searchTerms.join('", "')}"`
+                  message: `ðŸ”Ž Searching for: "${searchPlan.searchTerms.join('", "')}"`
                 });
                 
                 // STEP 2: Execute the search plan
@@ -209,7 +226,7 @@ export async function POST(request: NextRequest) {
                   if (target) {
                     await sendProgress({ 
                       type: 'status', 
-                      message: `✅ Found code in ${target.filePath.split('/').pop()} at line ${target.lineNumber}`
+                      message: `âœ… Found code in ${target.filePath.split('/').pop()} at line ${target.lineNumber}`
                     });
                     
                     console.log('[generate-ai-code-stream] Target selected:', target);
@@ -252,7 +269,7 @@ User request: "${prompt}"`;
                   console.warn('[generate-ai-code-stream] Search found no results, falling back to broader context');
                   await sendProgress({ 
                     type: 'status', 
-                    message: '⚠️ Could not find exact match, using broader search...'
+                    message: 'âš ï¸  Could not find exact match, using broader search...'
                   });
                 }
               } else {
@@ -262,7 +279,7 @@ User request: "${prompt}"`;
               console.error('[generate-ai-code-stream] Error in agentic search workflow:', error);
               await sendProgress({ 
                 type: 'status', 
-                message: '⚠️ Search workflow error, falling back to keyword method...'
+                message: 'âš ï¸  Search workflow error, falling back to keyword method...'
               });
               // Fall back to old method on any error if we have a manifest
               if (manifest) {
@@ -278,7 +295,7 @@ User request: "${prompt}"`;
               console.log('[generate-ai-code-stream] No manifest available for fallback');
               await sendProgress({ 
                 type: 'status', 
-                message: '⚠️ No file manifest available, will use broad context'
+                message: 'âš ï¸  No file manifest available, will use broad context'
               });
             }
           }
@@ -489,7 +506,7 @@ Remember: You are a SURGEON making a precise incision, not an artist repainting 
             console.log('[generate-ai-code-stream] Including', recentEdits.length, 'recent edits in context');
             conversationContext += `\n### Recent Edits:\n`;
             recentEdits.forEach(edit => {
-              conversationContext += `- "${edit.userRequest}" → ${edit.editType} (${edit.targetFiles.map(f => f.split('/').pop()).join(', ')})\n`;
+              conversationContext += `- "${edit.userRequest}" â†’ ${edit.editType} (${edit.targetFiles.map(f => f.split('/').pop()).join(', ')})\n`;
             });
           }
           
@@ -504,7 +521,7 @@ Remember: You are a SURGEON making a precise incision, not an artist repainting 
           
           if (recentlyCreatedFiles.length > 0) {
             const uniqueFiles = [...new Set(recentlyCreatedFiles)];
-            conversationContext += `\n### 🚨 RECENTLY CREATED/EDITED FILES (DO NOT RECREATE THESE):\n`;
+            conversationContext += `\n### ðŸš¨ RECENTLY CREATED/EDITED FILES (DO NOT RECREATE THESE):\n`;
             uniqueFiles.forEach(file => {
               conversationContext += `- ${file}\n`;
             });
@@ -549,7 +566,7 @@ Remember: You are a SURGEON making a precise incision, not an artist repainting 
         const systemPrompt = `You are an expert React developer with perfect memory of the conversation. You maintain context across messages and remember scraped websites, generated components, and applied code. Generate clean, modern React code for Vite applications.
 ${conversationContext}
 
-🚨 CRITICAL RULES - YOUR MOST IMPORTANT INSTRUCTIONS:
+ðŸš¨ CRITICAL RULES - YOUR MOST IMPORTANT INSTRUCTIONS:
 1. **DO EXACTLY WHAT IS ASKED - NOTHING MORE, NOTHING LESS**
    - Don't add features not requested
    - Don't fix unrelated issues
@@ -557,8 +574,8 @@ ${conversationContext}
 2. **CHECK App.jsx FIRST** - ALWAYS see what components exist before creating new ones
 3. **NAVIGATION LIVES IN Header.jsx** - Don't create Nav.jsx if Header exists with nav
 4. **USE STANDARD TAILWIND CLASSES ONLY**:
-   - ✅ CORRECT: bg-white, text-black, bg-blue-500, bg-gray-100, text-gray-900
-   - ❌ WRONG: bg-background, text-foreground, bg-primary, bg-muted, text-secondary
+   - âœ… CORRECT: bg-white, text-black, bg-blue-500, bg-gray-100, text-gray-900
+   - â Œ WRONG: bg-background, text-foreground, bg-primary, bg-muted, text-secondary
    - Use ONLY classes from the official Tailwind CSS documentation
 5. **FILE COUNT LIMITS**:
    - Simple style/text change = 1 file ONLY
@@ -636,7 +653,7 @@ TARGETED EDIT MODE ACTIVE
 - Confidence: ${editContext.editIntent.confidence}
 - Files to Edit: ${editContext.primaryFiles.join(', ')}
 
-🚨 CRITICAL RULE - VIOLATION WILL RESULT IN FAILURE 🚨
+ðŸš¨ CRITICAL RULE - VIOLATION WILL RESULT IN FAILURE ðŸš¨
 YOU MUST ***ONLY*** GENERATE THE FILES LISTED ABOVE!
 
 ABSOLUTE REQUIREMENTS:
@@ -650,18 +667,18 @@ ABSOLUTE REQUIREMENTS:
 8. DO NOT add bonus features
 
 EXAMPLE VIOLATIONS (THESE ARE FAILURES):
-❌ User says "update the hero" → You update Hero, Header, Footer, and App.jsx
-❌ User says "change header color" → You redesign the entire header
-❌ User says "fix the button" → You update multiple components
-❌ Files to Edit shows "Hero.jsx" → You also generate App.jsx "to integrate it"
-❌ Files to Edit shows "Header.jsx" → You also update Footer.jsx "for consistency"
+â Œ User says "update the hero" â†’ You update Hero, Header, Footer, and App.jsx
+â Œ User says "change header color" â†’ You redesign the entire header
+â Œ User says "fix the button" â†’ You update multiple components
+â Œ Files to Edit shows "Hero.jsx" â†’ You also generate App.jsx "to integrate it"
+â Œ Files to Edit shows "Header.jsx" â†’ You also update Footer.jsx "for consistency"
 
 CORRECT BEHAVIOR (THIS IS SUCCESS):
-✅ User says "update the hero" → You ONLY edit Hero.jsx with the requested change
-✅ User says "change header color" → You ONLY change the color in Header.jsx
-✅ User says "fix the button" → You ONLY fix the specific button issue
-✅ Files to Edit shows "Hero.jsx" → You generate ONLY Hero.jsx
-✅ Files to Edit shows "Header.jsx, Nav.jsx" → You generate EXACTLY 2 files: Header.jsx and Nav.jsx
+âœ… User says "update the hero" â†’ You ONLY edit Hero.jsx with the requested change
+âœ… User says "change header color" â†’ You ONLY change the color in Header.jsx
+âœ… User says "fix the button" â†’ You ONLY fix the specific button issue
+âœ… Files to Edit shows "Hero.jsx" â†’ You generate ONLY Hero.jsx
+âœ… Files to Edit shows "Header.jsx, Nav.jsx" â†’ You generate EXACTLY 2 files: Header.jsx and Nav.jsx
 
 THE AI INTENT ANALYZER HAS ALREADY DETERMINED THE FILES.
 DO NOT SECOND-GUESS IT.
@@ -753,9 +770,9 @@ CRITICAL STRING AND SYNTAX RULES:
 - ALWAYS escape quotes properly in JSX attributes
 - NEVER use curly quotes or smart quotes ('' "" '' "") - only straight quotes (' ")
 - ALWAYS convert smart/curly quotes to straight quotes:
-  - ' and ' → '
-  - " and " → "
-  - Any other Unicode quotes → straight quotes
+  - ' and ' â†’ '
+  - " and " â†’ "
+  - Any other Unicode quotes â†’ straight quotes
 - When strings contain apostrophes, either:
   1. Use double quotes: "you're" instead of 'you're'
   2. Escape the apostrophe: 'you\'re'
@@ -803,9 +820,9 @@ WHEN WORKING WITH SCRAPED CONTENT:
 - ALWAYS sanitize all text content before using in code
 - Convert ALL smart quotes to straight quotes
 - Example transformations:
-  - "Firecrawl's API" → "Firecrawl's API" or "Firecrawl\\'s API"
-  - 'It's amazing' → "It's amazing" or 'It\\'s amazing'
-  - "Best tool ever" → "Best tool ever"
+  - "Firecrawl's API" â†’ "Firecrawl's API" or "Firecrawl\\'s API"
+  - 'It's amazing' â†’ "It's amazing" or 'It\\'s amazing'
+  - "Best tool ever" â†’ "Best tool ever"
 - When in doubt, use double quotes for strings containing apostrophes
 - For testimonials or quotes from scraped content, ALWAYS clean the text:
   - Bad: content: 'Moved our internal agent's web scraping...'
@@ -850,13 +867,13 @@ CRITICAL COMPLETION RULES:
 With 16,000 tokens available, you have plenty of space to generate a complete application. Use it!
 
 UNDERSTANDING USER INTENT FOR INCREMENTAL VS FULL GENERATION:
-- "add/create/make a [specific feature]" → Add ONLY that feature to existing app
-- "add a videos page" → Create ONLY Videos.jsx and update routing
-- "update the header" → Modify ONLY header component
-- "fix the styling" → Update ONLY the affected components
-- "change X to Y" → Find the file containing X and modify it
-- "make the header black" → Find Header component and change its color
-- "rebuild/recreate/start over" → Full regeneration
+- "add/create/make a [specific feature]" â†’ Add ONLY that feature to existing app
+- "add a videos page" â†’ Create ONLY Videos.jsx and update routing
+- "update the header" â†’ Modify ONLY header component
+- "fix the styling" â†’ Update ONLY the affected components
+- "change X to Y" â†’ Find the file containing X and modify it
+- "make the header black" â†’ Find Header component and change its color
+- "rebuild/recreate/start over" â†’ Full regeneration
 - Default to incremental updates when working on an existing app
 
 SURGICAL EDIT RULES (CRITICAL FOR PERFORMANCE):
@@ -872,11 +889,11 @@ SURGICAL EDIT RULES (CRITICAL FOR PERFORMANCE):
 - If you're editing >3 files for a simple request, STOP - you're doing too much
 
 EXAMPLES OF CORRECT SURGICAL EDITS:
-✅ "change header to black" → Find className="..." in Header.jsx, change ONLY color classes
-✅ "update hero text" → Find the <h1> or <p> in Hero.jsx, change ONLY the text inside
-✅ "add a button to hero" → Find the return statement, ADD button, keep everything else
-❌ WRONG: Regenerating entire Header.jsx to change one color
-❌ WRONG: Rewriting Hero.jsx to add one button
+âœ… "change header to black" â†’ Find className="..." in Header.jsx, change ONLY color classes
+âœ… "update hero text" â†’ Find the <h1> or <p> in Hero.jsx, change ONLY the text inside
+âœ… "add a button to hero" â†’ Find the return statement, ADD button, keep everything else
+â Œ WRONG: Regenerating entire Header.jsx to change one color
+â Œ WRONG: Rewriting Hero.jsx to add one button
 
 NAVIGATION/HEADER INTELLIGENCE:
 - ALWAYS check App.jsx imports first
@@ -1039,7 +1056,7 @@ CRITICAL: When files are provided in the context:
                 }
               }
               
-              contextParts.push('\n🚨 CRITICAL INSTRUCTIONS - VIOLATION = FAILURE 🚨');
+              contextParts.push('\nðŸš¨ CRITICAL INSTRUCTIONS - VIOLATION = FAILURE ðŸš¨');
               contextParts.push('1. Analyze the user request: "' + prompt + '"');
               contextParts.push('2. Identify the MINIMUM number of files that need editing (usually just ONE)');
               contextParts.push('3. PRESERVE ALL EXISTING CONTENT in those files');
@@ -1047,19 +1064,19 @@ CRITICAL: When files are provided in the context:
               contextParts.push('5. DO NOT regenerate entire components from scratch');
               contextParts.push('6. DO NOT change unrelated parts of any file');
               contextParts.push('7. Generate ONLY the files that MUST be changed - NO EXTRAS');
-              contextParts.push('\n⚠️ FILE COUNT RULE:');
+              contextParts.push('\nâš ï¸  FILE COUNT RULE:');
               contextParts.push('- Simple change (color, text, spacing) = 1 file ONLY');
               contextParts.push('- Adding new component = 2 files MAX (new component + parent that imports it)');
               contextParts.push('- DO NOT exceed these limits unless absolutely necessary');
               contextParts.push('\nEXAMPLES OF CORRECT BEHAVIOR:');
-              contextParts.push('✅ "add a chart to the hero" → Edit ONLY Hero.jsx, ADD the chart, KEEP everything else');
-              contextParts.push('✅ "change header to black" → Edit ONLY Header.jsx, change ONLY the color');
-              contextParts.push('✅ "fix spacing in footer" → Edit ONLY Footer.jsx, adjust ONLY spacing');
+              contextParts.push('âœ… "add a chart to the hero" â†’ Edit ONLY Hero.jsx, ADD the chart, KEEP everything else');
+              contextParts.push('âœ… "change header to black" â†’ Edit ONLY Header.jsx, change ONLY the color');
+              contextParts.push('âœ… "fix spacing in footer" â†’ Edit ONLY Footer.jsx, adjust ONLY spacing');
               contextParts.push('\nEXAMPLES OF FAILURES:');
-              contextParts.push('❌ "change header color" → You edit Header, Footer, and App "for consistency"');
-              contextParts.push('❌ "add chart to hero" → You regenerate the entire Hero component');
-              contextParts.push('❌ "fix button" → You update 5 different component files');
-              contextParts.push('\n⚠️ FINAL WARNING:');
+              contextParts.push('â Œ "change header color" â†’ You edit Header, Footer, and App "for consistency"');
+              contextParts.push('â Œ "add chart to hero" â†’ You regenerate the entire Hero component');
+              contextParts.push('â Œ "fix button" â†’ You update 5 different component files');
+              contextParts.push('\nâš ï¸  FINAL WARNING:');
               contextParts.push('If you generate MORE files than necessary, you have FAILED');
               contextParts.push('If you DELETE or REWRITE existing functionality, you have FAILED');
               contextParts.push('ONLY change what was EXPLICITLY requested - NOTHING MORE');
@@ -1085,7 +1102,7 @@ CRITICAL: When files are provided in the context:
             contextParts.push('This is an incremental update to an existing application.');
             contextParts.push('DO NOT regenerate App.jsx, index.css, or other core files unless explicitly requested.');
             contextParts.push('ONLY create or modify the specific files needed for the user\'s request.');
-            contextParts.push('\n⚠️ CRITICAL FILE OUTPUT FORMAT - VIOLATION = FAILURE:');
+            contextParts.push('\nâš ï¸  CRITICAL FILE OUTPUT FORMAT - VIOLATION = FAILURE:');
             contextParts.push('YOU MUST OUTPUT EVERY FILE IN THIS EXACT XML FORMAT:');
             contextParts.push('<file path="src/components/ComponentName.jsx">');
             contextParts.push('// Complete file content here');
@@ -1093,13 +1110,13 @@ CRITICAL: When files are provided in the context:
             contextParts.push('<file path="src/index.css">');
             contextParts.push('/* CSS content here */');
             contextParts.push('</file>');
-            contextParts.push('\n❌ NEVER OUTPUT: "Generated Files: index.css, App.jsx"');
-            contextParts.push('❌ NEVER LIST FILE NAMES WITHOUT CONTENT');
-            contextParts.push('✅ ALWAYS: One <file> tag per file with COMPLETE content');
-            contextParts.push('✅ ALWAYS: Include EVERY file you modified');
+            contextParts.push('\nâ Œ NEVER OUTPUT: "Generated Files: index.css, App.jsx"');
+            contextParts.push('â Œ NEVER LIST FILE NAMES WITHOUT CONTENT');
+            contextParts.push('âœ… ALWAYS: One <file> tag per file with COMPLETE content');
+            contextParts.push('âœ… ALWAYS: Include EVERY file you modified');
           } else if (!hasBackendFiles) {
             // First generation mode - make it beautiful!
-            contextParts.push('\n🎨 FIRST GENERATION MODE - CREATE SOMETHING BEAUTIFUL!');
+            contextParts.push('\nðŸŽ¨ FIRST GENERATION MODE - CREATE SOMETHING BEAUTIFUL!');
             contextParts.push('\nThis is the user\'s FIRST experience. Make it impressive:');
             contextParts.push('1. **USE TAILWIND PROPERLY** - Use standard Tailwind color classes');
             contextParts.push('2. **NO PLACEHOLDERS** - Use real content, not lorem ipsum');
@@ -1107,7 +1124,7 @@ CRITICAL: When files are provided in the context:
             contextParts.push('4. **VISUAL POLISH** - Shadows, hover states, transitions');
             contextParts.push('5. **STANDARD CLASSES** - bg-white, text-gray-900, bg-blue-500, NOT bg-background');
             contextParts.push('\nCreate a polished, professional application that works perfectly on first load.');
-            contextParts.push('\n⚠️ OUTPUT FORMAT:');
+            contextParts.push('\nâš ï¸  OUTPUT FORMAT:');
             contextParts.push('Use <file path="...">content</file> tags for EVERY file');
             contextParts.push('NEVER output "Generated Files:" as plain text');
           }
@@ -1147,21 +1164,36 @@ CRITICAL: When files are provided in the context:
         const packagesToInstall: string[] = [];
         
         // Determine which provider to use based on model
-        const isAnthropic = model.startsWith('anthropic/');
-        const isOpenAI = model.startsWith('openai/gpt-5');
-        const modelProvider = isAnthropic ? anthropic : (isOpenAI ? openai : groq);
-        const actualModel = isAnthropic ? model.replace('anthropic/', '') : 
-                           (model === 'openai/gpt-5') ? 'gpt-5' : model;
+        let modelProvider;
+        let actualModelName;
+        let isGPT5 = false; // Flag for GPT-5 specific behavior
+
+        if (model.startsWith('anthropic/')) {
+          modelProvider = anthropic;
+          actualModelName = model.replace('anthropic/', '');
+        } else if (model.startsWith('openai/')) {
+          modelProvider = openai;
+          actualModelName = model.replace('openai/', '');
+          if (actualModelName === 'gpt-5') {
+            isGPT5 = true;
+          }
+        } else if (model.startsWith('google/')) { // Added for Gemini
+          modelProvider = google;
+          actualModelName = model.replace('google/', '');
+        } else {
+          modelProvider = groq; // Default to Groq
+          actualModelName = model;
+        }
         
         // Make streaming API call with appropriate provider
         const streamOptions: any = {
-          model: modelProvider(actualModel),
+          model: modelProvider(actualModelName),
           messages: [
             { 
               role: 'system', 
               content: systemPrompt + `
 
-🚨 CRITICAL CODE GENERATION RULES - VIOLATION = FAILURE 🚨:
+ðŸš¨ CRITICAL CODE GENERATION RULES - VIOLATION = FAILURE ðŸš¨:
 1. NEVER truncate ANY code - ALWAYS write COMPLETE files
 2. NEVER use "..." anywhere in your code - this causes syntax errors
 3. NEVER cut off strings mid-sentence - COMPLETE every string
@@ -1182,16 +1214,16 @@ PACKAGE RULES:
 - NEVER install packages like @mendable/firecrawl-js unless explicitly requested
 
 Examples of SYNTAX ERRORS (NEVER DO THIS):
-❌ className="px-4 py-2 bg-blue-600 hover:bg-blue-7...
-❌ <button className="btn btn-primary btn-...
-❌ const title = "Welcome to our...
-❌ import { useState, useEffect, ... } from 'react'
+â Œ className="px-4 py-2 bg-blue-600 hover:bg-blue-7...
+â Œ <button className="btn btn-primary btn-...
+â Œ const title = "Welcome to our...
+â Œ import { useState, useEffect, ... } from 'react'
 
 Examples of CORRECT CODE (ALWAYS DO THIS):
-✅ className="px-4 py-2 bg-blue-600 hover:bg-blue-700"
-✅ <button className="btn btn-primary btn-large">
-✅ const title = "Welcome to our application"
-✅ import { useState, useEffect, useCallback } from 'react'
+âœ… className="px-4 py-2 bg-blue-600 hover:bg-blue-700"
+âœ… <button className="btn btn-primary btn-large">
+âœ… const title = "Welcome to our application"
+âœ… import { useState, useEffect, useCallback } from 'react'
 
 REMEMBER: It's better to generate fewer COMPLETE files than many INCOMPLETE files.`
             },
@@ -1206,11 +1238,11 @@ You MUST include the closing </file> tag and ALL the code in between.
 
 NEVER write partial code like:
 <h1>Build and deploy on the AI Cloud.</h1>
-<p>Some text...</p>  ❌ WRONG
+<p>Some text...</p>  â Œ WRONG
 
 ALWAYS write complete code:
 <h1>Build and deploy on the AI Cloud.</h1>
-<p>Some text here with full content</p>  ✅ CORRECT
+<p>Some text here with full content</p>  âœ… CORRECT
 
 If you're running out of space, generate FEWER files but make them COMPLETE.
 It's better to have 3 complete files than 10 incomplete files.`
@@ -1223,12 +1255,12 @@ It's better to have 3 complete files than 10 incomplete files.`
         };
         
         // Add temperature for non-reasoning models
-        if (!model.startsWith('openai/gpt-5')) {
-          streamOptions.temperature = 0.7;
+        if (!isGPT5) {
+          streamOptions.temperature = appConfig.ai.defaultTemperature;
         }
         
         // Add reasoning effort for GPT-5 models
-        if (isOpenAI) {
+        if (isGPT5) {
           streamOptions.experimental_providerMetadata = {
             openai: {
               reasoningEffort: 'high'
@@ -1579,10 +1611,12 @@ Provide the complete file content without any truncation. Include all necessary 
                 // Make a focused API call to complete this specific file
                 // Create a new client for the completion based on the provider
                 let completionClient;
-                if (model.includes('gpt') || model.includes('openai')) {
+                if (model.includes('openai')) {
                   completionClient = openai;
-                } else if (model.includes('claude')) {
+                } else if (model.includes('anthropic')) {
                   completionClient = anthropic;
+                } else if (model.includes('google')) { // Added for Gemini
+                  completionClient = google;
                 } else {
                   completionClient = groq;
                 }

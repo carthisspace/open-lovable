@@ -12,6 +12,7 @@ Open Lovable is an innovative AI-powered application designed to streamline the 
 *   **Build Tool**: Next.js (with Turbopack for `dev`)
 *   **AI Integration**:
     *   `@ai-sdk/anthropic`
+    *   `@ai-sdk/google` (for Gemini API)
     *   `@ai-sdk/groq`
     *   `@ai-sdk/openai`
     *   `ai` (Vercel AI SDK)
@@ -64,7 +65,7 @@ The project follows a modern Next.js architecture utilizing the App Router, comb
     1.  **User Interaction**: A user inputs a prompt or command into the chat interface on `app/page.tsx`.
     2.  **Frontend to API**: The frontend sends a request to a relevant Next.js API route (e.g., `app/api/generate-ai-code-stream/route.ts` or `app/api/analyze-edit-intent/route.ts`).
     3.  **API Processing**: The API route processes the request:
-        *   It interacts with external AI models (Anthropic, OpenAI, Groq) using the AI SDKs to generate or analyze code.
+        *   It interacts with external AI models (Anthropic, OpenAI, Groq, and Google Gemini) using the AI SDKs to generate or analyze code.
         *   It communicates with the E2B Code Interpreter API to create, manage, run commands, and retrieve files from the sandbox.
         *   It might use Firecrawl for web scraping to gather additional context.
         *   Utility functions from `lib/` are used for tasks like file parsing or intent analysis.
@@ -96,7 +97,7 @@ The project heavily relies on its Next.js API routes and external third-party se
 *   **External Services**:
     *   **E2B Code Interpreter**: This is a fundamental external service that provides the secure, isolated, and interactive coding environment (sandbox) where the AI's generated code is run, tested, and debugged. It allows the application to simulate a real development environment.
     *   **Firecrawl**: A web scraping API used to gather information from specified URLs or screenshots. This service enhances the AI's ability to understand context from external web resources.
-    *   **AI Providers (Anthropic, OpenAI, Groq)**: These are the large language model (LLM) providers that power the core intelligence of the application. They are responsible for generating code, analyzing user intent, and performing complex reasoning tasks.
+    *   **AI Providers (Anthropic, OpenAI, Groq, and Google Gemini)**: These are the large language model (LLM) providers that power the core intelligence of the application. They are responsible for generating code, analyzing user intent, and performing complex reasoning tasks.
 
 ### AI Capabilities
 Open Lovable leverages AI to provide a comprehensive development experience:
