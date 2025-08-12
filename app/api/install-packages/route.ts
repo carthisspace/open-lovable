@@ -257,9 +257,9 @@ if rc != 0 and PNPM_OUTDATED_LOCKFILE_ERROR in full_output:
     retry_needed = True
 
 if retry_needed:
-    # --- Run bare 'pnpm install' to update the lockfile ---
-    print("Attempting to update lockfile with 'pnpm install'...")
-    update_rc, update_full_output, update_stdout, update_stderr = run_pnpm_command(['pnpm', 'install'], timeout=180) # More time for bare install
+    # --- Run 'pnpm install --no-frozen-lockfile' to update the lockfile ---
+    print("Attempting to update lockfile with 'pnpm install --no-frozen-lockfile'...")
+    update_rc, update_full_output, update_stdout, update_stderr = run_pnpm_command(['pnpm', 'install', '--no-frozen-lockfile'], timeout=180) # More time for bare install
 
     all_stdout_lines.extend(update_stdout)
     all_stderr_lines.extend(update_stderr)
@@ -295,9 +295,9 @@ for pkg in ${JSON.stringify(packagesToInstall)}:
     # Check both dependencies and devDependencies
     if pkg in package_json.get('dependencies', {}) or pkg in package_json.get('devDependencies', {}):
         installed.append(pkg)
-        print(f"✓ Verified {pkg}")
+        print(f"âœ“ Verified {pkg}")
     else:
-        print(f"✗ Package {pkg} not found in dependencies/devDependencies")
+        print(f"âœ— Package {pkg} not found in dependencies/devDependencies")
         
 print(f"\\nVerified installed packages: {installed}")
         `, { timeout: 300000 }); // Increased timeout to 5 minutes for potential retries
@@ -379,7 +379,7 @@ process = subprocess.Popen(
     env=env
 )
 
-print(f'✓ Vite dev server restarted with PID: {process.pid}')
+print(f'âœ“ Vite dev server restarted with PID: {process.pid}')
 
 # Store process info for later
 with open('/tmp/vite-process.pid', 'w') as f:
