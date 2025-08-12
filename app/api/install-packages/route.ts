@@ -11,9 +11,9 @@ export async function POST(request: NextRequest) {
     const { packages, sandboxId } = await request.json();
     
     if (!packages || !Array.isArray(packages) || packages.length === 0) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Packages array is required' 
+      return NextResponse.json({
+        success: false,
+        error: 'Packages array is required'
       }, { status: 400 });
     }
     
@@ -47,17 +47,17 @@ export async function POST(request: NextRequest) {
         console.log(`[install-packages] Successfully reconnected to sandbox ${sandboxId}`);
       } catch (error) {
         console.error(`[install-packages] Failed to reconnect to sandbox:`, error);
-        return NextResponse.json({ 
-          success: false, 
-          error: `Failed to reconnect to sandbox: ${(error as Error).message}` 
+        return NextResponse.json({
+          success: false,
+          error: `Failed to reconnect to sandbox: ${(error as Error).message}`
         }, { status: 500 });
       }
     }
     
     if (!sandbox) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'No active sandbox available' 
+      return NextResponse.json({
+        success: false,
+        error: 'No active sandbox available'
       }, { status: 400 });
     }
     
@@ -70,17 +70,19 @@ export async function POST(request: NextRequest) {
     
     // Function to send progress updates
     const sendProgress = async (data: any) => {
-      const message = `data: ${JSON.stringify(data)}\n\n`;
+      const message = `data: ${JSON.stringify(data)}
+
+`;
       await writer.write(encoder.encode(message));
     };
     
     // Start installation in background
     (async (sandboxInstance) => {
       try {
-        await sendProgress({ 
-          type: 'start', 
+        await sendProgress({
+          type: 'start',
           message: `Installing ${validPackages.length} package${validPackages.length > 1 ? 's' : ''}...`,
-          packages: validPackages 
+          packages: validPackages
         });
         
         // Kill any existing Vite process first
@@ -102,9 +104,9 @@ except:
         `);
         
         // Check which packages are already installed
-        await sendProgress({ 
-          type: 'status', 
-          message: 'Checking installed packages...' 
+        await sendProgress({
+          type: 'status',
+          message: 'Checking installed packages...'
         });
         
         const checkResult = await sandboxInstance.runCode(`
@@ -172,8 +174,8 @@ except Exception as e:
         
         
         if (packagesToInstall.length === 0) {
-          await sendProgress({ 
-            type: 'success', 
+          await sendProgress({
+            type: 'success',
             message: 'All packages are already installed',
             installedPackages: [],
             alreadyInstalled: validPackages
@@ -184,8 +186,8 @@ except Exception as e:
         // Install only packages that aren't already installed
         const packageList = packagesToInstall.join(' ');
         // Only send the pnpm install command message if we're actually installing new packages
-        await sendProgress({ 
-          type: 'info', 
+        await sendProgress({
+          type: 'info',
           message: `Installing ${packagesToInstall.length} new package(s): ${packagesToInstall.join(', ')}`
         });
         
@@ -211,7 +213,7 @@ final_rc = 1 # Assume failure initially
 
 def run_pnpm_command(cmd_args, timeout=120):
     """Helper function to run pnpm commands and capture output."""
-    print(f"Running command: {' '.join(cmd_args)}")
+    print(f"STATUS: Running command: {' '.join(cmd_args)}")
     process = subprocess.Popen(
         cmd_args,
         stdout=subprocess.PIPE,
@@ -238,11 +240,11 @@ def run_pnpm_command(cmd_args, timeout=120):
         print("STDERR:", stderr_output.strip()) # Print to sandbox stdout for real-time logging
 
     rc = process.poll()
-    full_output = "\\n".join(current_stdout_lines + current_stderr_lines)
+    full_output = "\n".join(current_stdout_lines + current_stderr_lines)
     return rc, full_output, current_stdout_lines, current_stderr_lines
 
 # --- First attempt to install packages ---
-print(f"Attempt 1: Installing packages: {' '.join(packages_to_install)}")
+print(f"STATUS: Attempt 1: Installing packages: {' '.join(packages_to_install)}")
 rc, full_output, stdout_lines, stderr_lines = run_pnpm_command(initial_cmd_args, timeout=120) # Increased timeout
 
 all_stdout_lines.extend(stdout_lines)
@@ -253,22 +255,22 @@ PNPM_OUTDATED_LOCKFILE_ERROR = "ERR_PNPM_OUTDATED_LOCKFILE"
 retry_needed = False
 
 if rc != 0 and PNPM_OUTDATED_LOCKFILE_ERROR in full_output:
-    print(f"Detected '{PNPM_OUTDATED_LOCKFILE_ERROR}'. Attempting to update lockfile and retry.")
+    print(f"WARNING: Detected '{PNPM_OUTDATED_LOCKFILE_ERROR}'. Attempting to update lockfile and retry.")
     retry_needed = True
 
 if retry_needed:
     # --- Run 'pnpm install --no-frozen-lockfile' to update the lockfile ---
-    print("Attempting to update lockfile with 'pnpm install --no-frozen-lockfile'...")
+    print("STATUS: Attempting to update lockfile with 'pnpm install --no-frozen-lockfile'...")
     update_rc, update_full_output, update_stdout, update_stderr = run_pnpm_command(['pnpm', 'install', '--no-frozen-lockfile'], timeout=180) # More time for bare install
 
     all_stdout_lines.extend(update_stdout)
     all_stderr_lines.extend(update_stderr)
 
     if update_rc != 0:
-        print("Failed to update lockfile. The original package installation error might persist.")
+        print("ERROR: Failed to update lockfile. The original package installation error might persist.")
         # Keep the original rc and output as the primary failure reason
     else:
-        print("Lockfile updated successfully. Attempt 2: Retrying package installation.")
+        print("STATUS: Lockfile updated successfully. Attempt 2: Retrying package installation.")
         # --- Second attempt to install packages ---
         rc, full_output, stdout_lines, stderr_lines = run_pnpm_command(initial_cmd_args, timeout=120)
         
@@ -278,12 +280,12 @@ if retry_needed:
 
 # --- Final output processing ---
 # Check for pnpm specific errors like peer dependency issues
-if 'ERR_PNPM_PEER_DEPENDENCY_ISSUES' in "\\n".join(all_stderr_lines):
+if 'ERR_PNPM_PEER_DEPENDENCY_ISSUES' in "\n".join(all_stderr_lines):
     print("PNPM_PEER_DEPENDENCY_ERROR: Peer dependency issues detected. Consider running 'pnpm install --force' if necessary.")
-elif 'ERESOLVE' in "\\n".join(all_stderr_lines): # Keep ERESOLVE for npm compatibility if it somehow appears
+elif 'ERESOLVE' in "\n".join(all_stderr_lines): # Keep ERESOLVE for npm compatibility if it somehow appears
     print("ERESOLVE_ERROR: Dependency conflict detected - consider using --legacy-peer-deps flag")
 
-print(f"\\nInstallation completed with code: {final_rc}")
+print(f"\nInstallation completed with code: {final_rc}")
 
 # Verify packages were installed
 import json
@@ -295,11 +297,11 @@ for pkg in ${JSON.stringify(packagesToInstall)}:
     # Check both dependencies and devDependencies
     if pkg in package_json.get('dependencies', {}) or pkg in package_json.get('devDependencies', {}):
         installed.append(pkg)
-        print(f"âœ“ Verified {pkg}")
+        print(f"\u00e2\u02dc\u2020 Verified {pkg}")
     else:
-        print(f"âœ— Package {pkg} not found in dependencies/devDependencies")
+        print(f"\u00e2\u02dc\u2039 Package {pkg} not found in dependencies/devDependencies")
         
-print(f"\\nVerified installed packages: {installed}")
+print(f"\nVerified installed packages: {installed}")
         `, { timeout: 300000 }); // Increased timeout to 5 minutes for potential retries
         
         // Send pnpm output
@@ -313,18 +315,24 @@ print(f"\\nVerified installed packages: {installed}")
             }
           } else if (line.includes('PNPM_PEER_DEPENDENCY_ERROR:')) {
             const msg = line.replace('PNPM_PEER_DEPENDENCY_ERROR:', '').trim();
-            await sendProgress({ 
-              type: 'warning', 
-              message: `Peer dependency issues detected: ${msg}` 
+            await sendProgress({
+              type: 'warning',
+              message: `Peer dependency issues detected: ${msg}`
             });
           } else if (line.includes('ERESOLVE_ERROR:')) { // Keep for backward compatibility or if npm errors still appear
             const msg = line.replace('ERESOLVE_ERROR:', '').trim();
-            await sendProgress({ 
-              type: 'warning', 
-              message: `Dependency conflict detected: ${msg}` 
+            await sendProgress({
+              type: 'warning',
+              message: `Dependency conflict detected: ${msg}`
             });
           } else if (line.includes('pnpm WARN') || line.includes('npm WARN')) { // Check for both pnpm and npm warnings
             await sendProgress({ type: 'warning', message: line });
+          } else if (line.includes('WARNING:')) { // New: Handle custom warning messages from Python
+            await sendProgress({ type: 'warning', message: line.replace('WARNING:', '').trim() });
+          } else if (line.includes('STATUS:')) { // New: Handle custom status messages from Python
+            await sendProgress({ type: 'status', message: line.replace('STATUS:', '').trim() });
+          } else if (line.includes('ERROR:') && !line.includes('STDERR:')) { // New: Handle custom error messages from Python, ensure not to double-process STDERR
+            await sendProgress({ type: 'error', message: line.replace('ERROR:', '').trim() });
           } else if (line.trim() && !line.includes('undefined')) {
             await sendProgress({ type: 'output', message: line });
           }
@@ -342,15 +350,15 @@ print(f"\\nVerified installed packages: {installed}")
         }
         
         if (installedPackages.length > 0) {
-          await sendProgress({ 
-            type: 'success', 
+          await sendProgress({
+            type: 'success',
             message: `Successfully installed: ${installedPackages.join(', ')}`,
-            installedPackages 
+            installedPackages
           });
         } else {
-          await sendProgress({ 
-            type: 'error', 
-            message: 'Failed to verify package installation' 
+          await sendProgress({
+            type: 'error',
+            message: 'Failed to verify package installation'
           });
         }
         
@@ -379,7 +387,7 @@ process = subprocess.Popen(
     env=env
 )
 
-print(f'âœ“ Vite dev server restarted with PID: {process.pid}')
+print(f'\u00e2\u02dc\u2020 Vite dev server restarted with PID: {process.pid}')
 
 # Store process info for later
 with open('/tmp/vite-process.pid', 'w') as f:
@@ -395,17 +403,17 @@ subprocess.run(['touch', '/home/user/app/vite.config.js'])
 print("Vite restarted and should now recognize all packages")
         `);
         
-        await sendProgress({ 
-          type: 'complete', 
+        await sendProgress({
+          type: 'complete',
           message: 'Package installation complete and dev server restarted!',
-          installedPackages 
+          installedPackages
         });
         
       } catch (error) {
         const errorMessage = (error as Error).message;
         if (errorMessage && errorMessage !== 'undefined') {
-          await sendProgress({ 
-            type: 'error', 
+          await sendProgress({
+            type: 'error',
             message: errorMessage
           });
         }
@@ -425,9 +433,9 @@ print("Vite restarted and should now recognize all packages")
     
   } catch (error) {
     console.error('[install-packages] Error:', error);
-    return NextResponse.json({ 
-      success: false, 
-      error: (error as Error).message 
+    return NextResponse.json({
+      success: false,
+      error: (error as Error).message
     }, { status: 500 });
   }
 }
