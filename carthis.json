@@ -1,0 +1,16 @@
+{
+  "projectName": "New Project",
+  "projectPurpose": "A newly initialized project, ready for development with Carthis AI.",
+  "technologyStack": {
+    "frontend": [
+      "React",
+      "TypeScript",
+      "Vite",
+      "Tailwind CSS"
+    ],
+    "backend": "Firebase (Firestore, Auth)",
+    "hosting": "Vercel"
+  },
+  "coreComponents": [],
+  "designSystemSummary": "Default Tailwind CSS."
+}
